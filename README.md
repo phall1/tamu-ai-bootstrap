@@ -15,8 +15,15 @@ cd my-project
 bin/setup
 ```
 
-That's it. Setup installs the tools, has you log in to GitHub and Claude, and
-opens Claude. If Claude asks whether you trust the folder, choose **Yes**.
+That's it. Setup installs the tools, has you log in to GitHub, and asks how
+you'll use Claude:
+
+1. **TAMU AI Chat API key:** no subscription needed. Make a key at
+   [chat.tamu.ai](https://chat.tamu.ai) ("Create and Test API Key" in the
+   docs) and paste it when setup asks.
+2. **Your own Claude subscription (Pro or Max):** log in in the browser.
+
+Then it opens Claude. If Claude asks whether you trust the folder, choose **Yes**.
 Claude then makes this your own GitHub repo and asks what you want to build.
 
 To come back later:
@@ -25,6 +32,12 @@ To come back later:
 cd my-project
 claude
 ```
+
+**Switching between TAMU and your own subscription:** exit Claude, run
+`bin/use tamu` or `bin/use claude`, and start `claude` again. Run `bin/use` on
+its own to see which one is active. For a different TAMU model, run
+`bin/use tamu --model "<name>"`. If you give it a name that doesn't exist, it
+lists the ones you can use.
 
 **Something broken?** Run `bin/doctor`. It prints the fix for each problem.
 You can also just tell Claude what went wrong.
@@ -43,6 +56,7 @@ You can also just tell Claude what went wrong.
 | --- | --- |
 | `bin/setup` | Installs and logs in to everything, then starts Claude |
 | `bin/doctor` | Checks everything and prints the fix for each problem |
+| `bin/use` | Switches Claude between TAMU AI Chat and your own subscription |
 | `bin/make-it-mine` | Creates your own GitHub repo for this folder (Claude runs it for you) |
 | `mise.toml` | Tool versions, installed by [mise](https://mise.jdx.dev) |
 | `CLAUDE.md`, `.claude/` | How Claude works here: the rules, `/start`, and skills |

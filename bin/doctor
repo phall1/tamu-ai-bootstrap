@@ -129,11 +129,12 @@ check_claude() {
     problem "Claude Code not installed" "curl -fsSL https://claude.ai/install.sh | bash"
     return
   fi
-  if ! claude auth status 2>/dev/null | grep -q '"loggedIn": *true'; then
-    problem "not logged in to Claude" "claude auth login"
+  local status
+  if ! status="$(bin/use check)"; then
+    problem "$status" "bin/use tamu   (TAMU AI Chat key)   or   bin/use claude   (Claude subscription)"
     return
   fi
-  ok "Claude Code $(claude --version 2>/dev/null | awk '{print $1}'), logged in"
+  ok "Claude Code $(claude --version 2>/dev/null | awk '{print $1}'): $status"
 }
 
 check_repo() {

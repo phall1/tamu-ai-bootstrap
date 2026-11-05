@@ -8,6 +8,8 @@
 			"Bash(./bin/doctor*)",
 			"Bash(./bin/setup*)",
 			"Bash(./bin/make-it-mine*)",
+			"Bash(bin/use)",
+			"Bash(bin/use check)",
 			"Bash(mise *)",
 			"Bash(bun *)",
 			"Bash(bunx *)",

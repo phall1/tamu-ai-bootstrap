@@ -1,0 +1,163 @@
+#!/usr/bin/env bash
+# Chooses how Claude Code connects in this repo. Switch any time, then restart Claude.
+#   bin/use                           show which one is active
+#   bin/use tamu                      TAMU AI Chat (asks for your API key the first time)
+#   bin/use tamu --new-key            replace the saved TAMU key
+#   bin/use tamu --model "<name>"     pick a model (shows the ones you can use)
+#   bin/use claude                    your own Claude account (Pro or Max)
+#   bin/use check                     succeed if the active choice works
+# Another TAMUS school? Set TAMU_AI_URL, e.g. TAMU_AI_URL=https://chat-api.example.edu/api bin/use tamu
+set -euo pipefail
+cd "$(dirname "$0")/.." || exit 1
+
+TAMU_AI_URL="${TAMU_AI_URL:-https://chat-api.tamu.ai/api}"
+DEFAULT_MODEL="protected.Claude Sonnet 4.6"
+KEY_FILE="$HOME/.config/tamu-ai/api-key" # outside the repo, readable only by you
+SETTINGS=".claude/settings.local.json"   # personal, gitignored
+
+main() {
+  case "${1:-}" in
+    "") show ;;
+    tamu) shift && use_tamu "$@" ;;
+    claude) use_claude ;;
+    check) check ;;
+    *) sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//' && exit 2 ;;
+  esac
+}
+
+using_tamu() { [ -n "$(settings_get env.ANTHROPIC_BASE_URL)" ]; }
+claude_logged_in() { claude auth status 2>/dev/null | grep -q '"loggedIn": *true'; }
+
+show() {
+  if using_tamu; then
+    echo "Using TAMU AI Chat, model: $(settings_get env.ANTHROPIC_MODEL)"
+  else
+    echo "Using your Claude account"
+  fi
+  echo "Switch with: bin/use tamu   or   bin/use claude"
+}
+
+check() {
+  if ! using_tamu; then
+    claude_logged_in && echo "Claude account: logged in" && return
+    echo "not logged in to Claude (run bin/use claude, or bin/use tamu for TAMU AI Chat)"
+    exit 1
+  fi
+  local url model models
+  url="$(settings_get env.ANTHROPIC_BASE_URL)"
+  model="$(settings_get env.ANTHROPIC_MODEL)"
+  if [ ! -s "$KEY_FILE" ]; then echo "TAMU AI Chat key missing (run bin/use tamu --new-key)" && exit 1; fi
+  models="$(TAMU_AI_URL="$url" list_models "$(cat "$KEY_FILE")" 2>&1)" || { echo "$models" && exit 1; }
+  if ! grep -qxF "$model" <<<"$models"; then echo "TAMU model '$model' is gone (run bin/use tamu --model ...)" && exit 1; fi
+  echo "TAMU AI Chat: key works, model $model"
+}
+
+use_tamu() {
+  local model="" new_key=false
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --new-key) new_key=true ;;
+      --model) model="${2:?--model needs a name}" && shift ;;
+      *) echo "unknown option: $1" >&2 && exit 2 ;;
+    esac
+    shift
+  done
+
+  local key models
+  if $new_key || [ ! -s "$KEY_FILE" ]; then key="$(ask_for_key)"; else key="$(cat "$KEY_FILE")"; fi
+  models="$(list_models "$key")" || exit 1
+  save_key "$key"
+
+  model="${model:-$(pick_default "$models")}"
+  if ! grep -qxF "$model" <<<"$models"; then
+    echo "Model '$model' isn't available. Your Claude models:" >&2
+    grep -i claude <<<"$models" | sed 's/^/  /' >&2
+    exit 1
+  fi
+  settings_tamu "$model" "$(alias_model "$models" haiku "$model")" "$(alias_model "$models" opus "$model")"
+  echo "Claude Code now uses TAMU AI Chat here (model: $model). If Claude is already running, restart it."
+}
+
+ask_for_key() {
+  echo "Create an API key in TAMU AI Chat: https://chat.tamu.ai (see the docs page \"Create and Test API Key\")." >&2
+  local key
+  read -r -s -p "Paste your API key (it won't show): " key
+  echo >&2
+  if [ -z "$key" ]; then echo "No key entered." >&2 && exit 1; fi
+  echo "$key"
+}
+
+save_key() {
+  mkdir -p "$(dirname "$KEY_FILE")"
+  (umask 077 && printf '%s\n' "$1" >"$KEY_FILE")
+}
+
+# Prints one model id per line, or explains why it can't.
+list_models() {
+  local response status
+  if ! response="$(curl -sS -w '\n%{http_code}' -H "Authorization: Bearer $1" "$TAMU_AI_URL/models" 2>/dev/null)"; then
+    echo "Couldn't reach TAMU AI Chat ($TAMU_AI_URL). Check your internet connection." >&2
+    return 1
+  fi
+  status="${response##*$'\n'}"
+  if [ "$status" != 200 ]; then
+    echo "TAMU AI Chat rejected the API key (HTTP $status). Make a new key, then run: bin/use tamu --new-key" >&2
+    return 1
+  fi
+  bun -e 'const r = JSON.parse(await Bun.stdin.text()); for (const m of r.data ?? r) console.log(m.id)' <<<"${response%$'\n'*}"
+}
+
+pick_default() {
+  if grep -qxF "$DEFAULT_MODEL" <<<"$1"; then echo "$DEFAULT_MODEL" && return; fi
+  grep -i 'claude.*sonnet' <<<"$1" | head -1 || true
+}
+
+# Claude Code also asks for "haiku" (background tasks) and "opus" (/model opus).
+# Use the matching TAMU model, or the main model if there isn't one.
+alias_model() {
+  local match
+  match="$(grep -i "claude.*$2" <<<"$1" | head -1 || true)"
+  echo "${match:-$3}"
+}
+
+use_claude() {
+  settings_clear
+  if ! claude_logged_in; then claude auth login; fi
+  echo "Claude Code now uses your Claude account here. If Claude is already running, restart it."
+}
+
+# --- edits to .claude/settings.local.json; anything else in the file is kept ---
+
+settings_get() {
+  [ -f "$SETTINGS" ] || return 0
+  bun -e 'const s = await Bun.file(process.argv[1]).json(); const v = process.argv[2].split(".").reduce((o, k) => o?.[k], s); if (v) console.log(v)' "$SETTINGS" "$1"
+}
+
+settings_tamu() {
+  mkdir -p "$(dirname "$SETTINGS")"
+  # shellcheck disable=SC2016 # ${keyFile} below is JavaScript, not shell
+  bun -e '
+    const [path, url, keyFile, model, haiku, opus] = process.argv.slice(1);
+    const file = Bun.file(path);
+    const s = (await file.exists()) ? await file.json() : {};
+    s.apiKeyHelper = `cat "${keyFile}"`;
+    s.env = { ...s.env, ANTHROPIC_BASE_URL: url, ANTHROPIC_MODEL: model, ANTHROPIC_DEFAULT_SONNET_MODEL: model,
+      ANTHROPIC_DEFAULT_HAIKU_MODEL: haiku, ANTHROPIC_DEFAULT_OPUS_MODEL: opus };
+    await Bun.write(path, JSON.stringify(s, null, 2) + "\n");
+  ' "$SETTINGS" "$TAMU_AI_URL" "$KEY_FILE" "$1" "$2" "$3"
+}
+
+settings_clear() {
+  [ -f "$SETTINGS" ] || return 0
+  bun -e '
+    const path = process.argv[1];
+    const s = await Bun.file(path).json();
+    delete s.apiKeyHelper;
+    for (const k of ["ANTHROPIC_BASE_URL", "ANTHROPIC_MODEL", "ANTHROPIC_DEFAULT_SONNET_MODEL",
+      "ANTHROPIC_DEFAULT_HAIKU_MODEL", "ANTHROPIC_DEFAULT_OPUS_MODEL"]) delete s.env?.[k];
+    if (s.env && Object.keys(s.env).length === 0) delete s.env;
+    await Bun.write(path, JSON.stringify(s, null, 2) + "\n");
+  ' "$SETTINGS"
+}
+
+main "$@"

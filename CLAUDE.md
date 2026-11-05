@@ -10,6 +10,14 @@ If `bin/doctor` hasn't passed this session, run it. If it fails, run
 example), give them the exact command with a `!` in front, such as
 `! gh auth login`, so it runs in this session.
 
+## Claude access
+
+Claude Code here runs on either a TAMU AI Chat API key or the student's own
+Claude subscription. `bin/use` shows which one is active. To switch, the
+student exits Claude and runs `bin/use tamu` or `bin/use claude` in a
+terminal, then starts `claude` again. Never ask for an API key in chat.
+`bin/use tamu` reads it privately and saves it outside the repo.
+
 ## Tools (don't deviate)
 
 mise installs every tool (`mise.toml`). Never install runtimes with brew, apt,
