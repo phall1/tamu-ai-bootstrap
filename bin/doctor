@@ -1,173 +1,151 @@
 #!/usr/bin/env bash
-# Checks that everything needed to work in this repo is installed and logged in.
-# Every failure prints the command that fixes it. Exit code 0 = good to go.
+# Checks that everything this repo needs is installed and logged in.
+# Each problem comes with the command that fixes it. Exit code 0 = good to go.
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
 
-# Tool names straight from the [tools] table in mise.toml.
-TOOLS="$(awk '/^\[/{t=($0=="[tools]")} t && /^[a-z]/{print $1}' mise.toml)"
-
-# Colors only on a real terminal (keeps output clean when Claude runs it).
-if [ -t 1 ]; then G=$'\e[32m' Y=$'\e[33m' R=$'\e[31m' B=$'\e[1m' X=$'\e[0m'; else G='' Y='' R='' B='' X=''; fi
-
-failures=0
-ok() { printf '  %s✓%s %s\n' "$G" "$X" "$1"; }
-warn() { printf '  %s!%s %s\n      → %s\n' "$Y" "$X" "$1" "$2"; }
-bad() {
-  printf '  %s✗%s %s\n      → %s\n' "$R" "$X" "$1" "$2"
-  failures=$((failures + 1))
+main() {
+  check_os
+  check_system_packages
+  check_tools
+  check_git
+  check_github
+  check_claude
+  check_repo
+  echo
+  if [ "$problems" -eq 0 ]; then
+    echo "${GREEN}All good.${RESET} Run ${BOLD}claude${RESET} here and tell it what you want to build."
+    exit 0
+  fi
+  echo "${RED}$problems problem(s).${RESET} Run the commands above, or run bin/setup again."
+  exit 1
 }
-section() { printf '\n%s%s%s\n' "$B" "$1" "$X"; }
 
+# Colors only in a real terminal, so the output stays clean when Claude runs it.
+if [ -t 1 ]; then
+  GREEN=$'\e[32m' YELLOW=$'\e[33m' RED=$'\e[31m' BOLD=$'\e[1m' RESET=$'\e[0m'
+else
+  GREEN='' YELLOW='' RED='' BOLD='' RESET=''
+fi
+
+problems=0
+ok() { echo "  ${GREEN}✓${RESET} $1"; }
+note() { printf '  %s!%s %s\n      → %s\n' "$YELLOW" "$RESET" "$1" "$2"; }
+problem() {
+  printf '  %s✗%s %s\n      → %s\n' "$RED" "$RESET" "$1" "$2"
+  problems=$((problems + 1))
+}
+
+is_mac() { [ "$(uname -s)" = Darwin ]; }
 is_wsl() { grep -qis microsoft /proc/version 2>/dev/null; }
 
 check_os() {
   case "$(uname -s)" in
     Darwin) ok "macOS" ;;
-    Linux)
-      if ! is_wsl; then
-        ok "Linux"
-      elif [[ "$PWD" == /mnt/* ]]; then
-        warn "WSL, but this repo lives on the Windows drive ($PWD) - slow and flaky" \
-          "clone it inside Linux instead: cd ~ && git clone <repo-url>"
-      else
-        ok "WSL"
-      fi
-      ;;
-    *) bad "unsupported OS: $(uname -s)" \
-      "Windows: run 'wsl --install' in an admin PowerShell, reboot, and work inside Ubuntu" ;;
+    Linux) check_linux_location ;;
+    *) problem "unsupported system: $(uname -s)" \
+      "Windows: run 'wsl --install' in an admin PowerShell, restart, and work inside Ubuntu" ;;
   esac
 }
 
-check_system_deps() {
-  if [ "$(uname -s)" = Darwin ]; then
-    if xcode-select -p >/dev/null 2>&1; then
-      ok "Apple Command Line Tools"
-    else
-      bad "Apple Command Line Tools missing" "xcode-select --install"
-    fi
+check_linux_location() {
+  if ! is_wsl; then
+    ok "Linux"
+  elif [[ "$PWD" == /mnt/* ]]; then
+    note "this repo is on the Windows drive ($PWD), which is slow in WSL" \
+      "clone it inside Linux instead: cd ~ && git clone <repo-url>"
+  else
+    ok "WSL"
+  fi
+}
+
+check_system_packages() {
+  if is_mac; then
+    if xcode-select -p >/dev/null 2>&1; then return; fi
+    problem "Apple Command Line Tools missing" "xcode-select --install"
     return
   fi
-  local missing="" cmd
+  local cmd missing=""
   for cmd in git curl unzip make cc; do
     command -v "$cmd" >/dev/null || missing="$missing $cmd"
   done
-  if [ -z "$missing" ]; then
-    ok "system packages (git, curl, unzip, build tools)"
-  else
-    bad "missing system packages:$missing" \
+  if [ -n "$missing" ]; then
+    problem "missing system packages:$missing" \
       "sudo apt-get update && sudo apt-get install -y git curl unzip build-essential"
   fi
 }
 
-check_git() {
-  command -v git >/dev/null || return
-  ok "git $(git --version | awk '{print $3}')"
-  local key
-  for key in user.name user.email; do
-    if [ -n "$(git config --get "$key")" ]; then
-      ok "git $key: $(git config --get "$key")"
-    else
-      bad "git $key not set" "git config --global $key \"<your $key>\""
-    fi
-  done
-}
-
-check_mise() {
-  if ! command -v mise >/dev/null; then
-    bad "mise not installed (or not on PATH)" "bin/setup   (then open a new terminal)"
-    return 1
-  fi
-  ok "mise $(mise --version 2>/dev/null | awk '{print $1}')"
-}
-
-check_tool() {
-  local tool="$1"
-  if ! mise which "$tool" >/dev/null 2>&1; then
-    bad "$tool not installed" "mise install"
-    return
-  fi
-  if ! command -v "$tool" >/dev/null; then
-    bad "$tool installed but not on PATH" "open a new terminal (mise activation runs at shell start)"
-    return
-  fi
-  ok "$tool ($(mise current "$tool" 2>/dev/null))"
-}
-
-pkg_version() { sed -n 's/^ *"version": *"\(.*\)".*/\1/p' "node_modules/$1/package.json" | head -1; }
-
+# Every tool in the [tools] table of mise.toml, plus the TypeScript linters
+# from package.json.
 check_tools() {
-  local tool
-  for tool in $TOOLS; do check_tool "$tool"; done
-  if [ -x node_modules/.bin/oxlint ] && [ -x node_modules/.bin/oxfmt ]; then
-    ok "TypeScript lint/format (oxlint $(pkg_version oxlint), oxfmt $(pkg_version oxfmt))"
-  else
-    bad "TypeScript lint/format tools not installed" "bun install"
+  if ! command -v mise >/dev/null; then
+    problem "mise not installed" "bin/setup"
+    return
   fi
+  local tool found=""
+  while read -r tool; do
+    if ! mise which "$tool" >/dev/null 2>&1; then
+      problem "$tool not installed" "mise install"
+    elif ! command -v "$tool" >/dev/null; then
+      problem "$tool installed but not on PATH" "open a new terminal"
+    else
+      found="$found, $tool $(mise current "$tool" 2>/dev/null)"
+    fi
+  done < <(awk '/^\[/{t=($0=="[tools]")} t && /^[a-z]/{print $1}' mise.toml)
+  if [ -x node_modules/.bin/oxlint ] && [ -x node_modules/.bin/oxfmt ]; then
+    found="$found, oxlint $(package_version oxlint), oxfmt $(package_version oxfmt)"
+  else
+    problem "TypeScript lint/format tools not installed" "bun install"
+  fi
+  if [ -n "$found" ]; then ok "tools: ${found#, }"; fi
+}
+
+package_version() { sed -n 's/^ *"version": *"\(.*\)".*/\1/p' "node_modules/$1/package.json" | head -1; }
+
+check_git() {
+  local name email
+  name="$(git config --get user.name)"
+  email="$(git config --get user.email)"
+  if [ -z "$name" ]; then problem "git name not set" 'git config --global user.name "Your Name"'; fi
+  if [ -z "$email" ]; then problem "git email not set" 'git config --global user.email "you@example.com"'; fi
+  if [ -n "$name" ] && [ -n "$email" ]; then ok "git: $name <$email>"; fi
 }
 
 check_github() {
   command -v gh >/dev/null || return
-  if gh auth status >/dev/null 2>&1; then
-    ok "GitHub: logged in as $(gh api user -q .login 2>/dev/null || echo '?')"
-  else
-    bad "GitHub: not logged in" "gh auth login --web --git-protocol https"
+  if ! gh auth status >/dev/null 2>&1; then
+    problem "not logged in to GitHub" "gh auth login --web --git-protocol https"
     return
   fi
-  if git config --get-regexp '^credential\..*github\.com.*\.helper$' 2>/dev/null | grep -q 'gh auth'; then
-    ok "git push/pull uses your GitHub login"
-  else
-    bad "git isn't using your GitHub login (push will ask for a password)" "gh auth setup-git"
+  if ! git config --get-regexp '^credential\..*github\.com.*\.helper$' 2>/dev/null | grep -q 'gh auth'; then
+    problem "git push won't use your GitHub login" "gh auth setup-git"
+    return
   fi
+  ok "GitHub: logged in as $(gh api user -q .login 2>/dev/null || echo '?')"
 }
 
 check_claude() {
   if ! command -v claude >/dev/null; then
-    bad "Claude Code not installed" "curl -fsSL https://claude.ai/install.sh | bash"
+    problem "Claude Code not installed" "curl -fsSL https://claude.ai/install.sh | bash"
     return
   fi
-  ok "Claude Code $(claude --version 2>/dev/null | awk '{print $1}')"
-  if claude auth status 2>/dev/null | grep -q '"loggedIn": *true'; then
-    ok "Claude: logged in"
-  else
-    bad "Claude: not logged in" "claude auth login"
+  if ! claude auth status 2>/dev/null | grep -q '"loggedIn": *true'; then
+    problem "not logged in to Claude" "claude auth login"
+    return
   fi
+  ok "Claude Code $(claude --version 2>/dev/null | awk '{print $1}'), logged in"
 }
 
 check_repo() {
-  if [ ! -d .git ]; then
-    bad "not a git repository" "bin/setup"
-    return
-  fi
-  if grep -qs lefthook .git/hooks/pre-commit; then
-    ok "pre-commit hooks installed"
-  else
-    bad "pre-commit hooks not installed" "lefthook install"
+  if ! grep -qs lefthook .git/hooks/pre-commit; then
+    problem "pre-commit hooks not installed" "bin/setup"
   fi
   local status
   if status="$(bin/make-it-mine --check)"; then
     ok "$status"
   else
-    warn "$status" "bin/make-it-mine   (creates your own GitHub repo, once)"
+    note "$status" "bin/make-it-mine   (makes your own GitHub repo; run once)"
   fi
 }
 
-section "System"
-check_os
-check_system_deps
-check_git
-section "Tools"
-check_mise && check_tools
-section "Accounts"
-check_github
-check_claude
-section "Repo"
-check_repo
-
-echo
-if [ "$failures" -eq 0 ]; then
-  printf '%sAll good.%s Run %sclaude%s in this folder and tell it what you want to build.\n' "$G" "$X" "$B" "$X"
-  exit 0
-fi
-printf '%s%d problem(s).%s Fix them with the commands above, or run bin/setup.\n' "$R" "$failures" "$X"
-exit 1
+main "$@"
