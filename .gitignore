@@ -1,0 +1,24 @@
+# secrets
+.env
+.env.*
+!.env.example
+
+# python
+.venv/
+__pycache__/
+*.pyc
+.ruff_cache/
+.pytest_cache/
+
+# typescript / javascript
+node_modules/
+dist/
+*.tsbuildinfo
+
+# os / editors
+.DS_Store
+.idea/
+.vscode/
+
+# claude code (personal settings)
+.claude/settings.local.json

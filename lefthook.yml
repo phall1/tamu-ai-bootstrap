@@ -1,0 +1,15 @@
+# Git hooks. Installed by `bin/setup` (lefthook install).
+# Each check only runs when matching files are staged.
+pre-commit:
+  parallel: true
+  commands:
+    secrets:
+      run: gitleaks git --pre-commit --staged --redact --no-banner
+    python:
+      glob: "*.py"
+      run: ruff check --fix {staged_files} && ruff format {staged_files}
+      stage_fixed: true
+    typescript:
+      glob: "*.{js,jsx,ts,tsx,mjs,cjs,json,jsonc,css}"
+      run: biome check --write --no-errors-on-unmatched --files-ignore-unknown=true {staged_files}
+      stage_fixed: true

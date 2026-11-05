@@ -1,0 +1,147 @@
+#!/usr/bin/env bash
+# Checks that everything needed to work in this repo is installed and logged in.
+# Every failure prints the command that fixes it. Exit code 0 = good to go.
+set -uo pipefail
+cd "$(dirname "$0")/.." || exit 1
+
+# The repo students clone. If `origin` still points here, they haven't
+# made their own copy yet.
+TEMPLATE_REPO="phall1/tamu-ai-bootstrap"
+TOOLS="bun python uv ruff biome gitleaks lefthook gh"
+
+# Colors only on a real terminal (keeps output clean when Claude runs it).
+if [ -t 1 ]; then G=$'\e[32m' Y=$'\e[33m' R=$'\e[31m' B=$'\e[1m' X=$'\e[0m'; else G='' Y='' R='' B='' X=''; fi
+
+failures=0
+ok() { printf '  %s✓%s %s\n' "$G" "$X" "$1"; }
+warn() { printf '  %s!%s %s\n      → %s\n' "$Y" "$X" "$1" "$2"; }
+bad() {
+  printf '  %s✗%s %s\n      → %s\n' "$R" "$X" "$1" "$2"
+  failures=$((failures + 1))
+}
+section() { printf '\n%s%s%s\n' "$B" "$1" "$X"; }
+
+is_wsl() { grep -qis microsoft /proc/version 2>/dev/null; }
+
+check_os() {
+  case "$(uname -s)" in
+    Darwin) ok "macOS" ;;
+    Linux)
+      if ! is_wsl; then
+        ok "Linux"
+      elif [[ "$PWD" == /mnt/* ]]; then
+        warn "WSL, but this repo lives on the Windows drive ($PWD) - slow and flaky" \
+          "clone it inside Linux instead: cd ~ && git clone <repo-url>"
+      else
+        ok "WSL"
+      fi
+      ;;
+    *) bad "unsupported OS: $(uname -s)" \
+      "Windows: run 'wsl --install' in an admin PowerShell, reboot, and work inside Ubuntu" ;;
+  esac
+}
+
+check_git() {
+  if ! command -v git >/dev/null; then
+    bad "git not installed" "macOS: xcode-select --install   Linux/WSL: sudo apt-get install -y git"
+    return
+  fi
+  ok "git $(git --version | awk '{print $3}')"
+  local key
+  for key in user.name user.email; do
+    if [ -n "$(git config --get "$key")" ]; then
+      ok "git $key: $(git config --get "$key")"
+    else
+      bad "git $key not set" "git config --global $key \"<your $key>\""
+    fi
+  done
+}
+
+check_mise() {
+  if ! command -v mise >/dev/null; then
+    bad "mise not installed (or not on PATH)" "bin/setup   (then open a new terminal)"
+    return 1
+  fi
+  ok "mise $(mise --version 2>/dev/null | awk '{print $1}')"
+}
+
+check_tool() {
+  local tool="$1"
+  if ! mise which "$tool" >/dev/null 2>&1; then
+    bad "$tool not installed" "mise install"
+    return
+  fi
+  if ! command -v "$tool" >/dev/null; then
+    bad "$tool installed but not on PATH" "open a new terminal (mise activation runs at shell start)"
+    return
+  fi
+  ok "$tool ($(mise current "$tool" 2>/dev/null))"
+}
+
+check_tools() {
+  local tool
+  for tool in $TOOLS; do check_tool "$tool"; done
+}
+
+check_github() {
+  command -v gh >/dev/null || return
+  if gh auth status >/dev/null 2>&1; then
+    ok "GitHub: logged in as $(gh api user -q .login 2>/dev/null || echo '?')"
+  else
+    bad "GitHub: not logged in" "gh auth login --web --git-protocol https"
+  fi
+}
+
+check_claude() {
+  if ! command -v claude >/dev/null; then
+    bad "Claude Code not installed" "curl -fsSL https://claude.ai/install.sh | bash"
+    return
+  fi
+  ok "Claude Code $(claude --version 2>/dev/null | awk '{print $1}')"
+  if claude auth status 2>/dev/null | grep -q '"loggedIn": *true'; then
+    ok "Claude: logged in"
+  else
+    bad "Claude: not logged in" "claude auth login"
+  fi
+}
+
+check_repo() {
+  if [ ! -d .git ]; then
+    bad "not a git repository" "bin/setup"
+    return
+  fi
+  if grep -qs lefthook .git/hooks/pre-commit; then
+    ok "pre-commit hooks installed"
+  else
+    bad "pre-commit hooks not installed" "lefthook install"
+  fi
+  local origin
+  origin="$(git remote get-url origin 2>/dev/null || true)"
+  if [ -z "$origin" ]; then
+    warn "no 'origin' remote yet" "gh repo create <name> --private --source . --remote origin --push"
+  elif [[ "$origin" == *"$TEMPLATE_REPO"* ]]; then
+    warn "'origin' is still the class template" \
+      "git remote rename origin upstream && gh repo create <name> --private --source . --remote origin --push"
+  else
+    ok "origin: $origin"
+  fi
+}
+
+section "System"
+check_os
+check_git
+section "Tools"
+check_mise && check_tools
+section "Accounts"
+check_github
+check_claude
+section "Repo"
+check_repo
+
+echo
+if [ "$failures" -eq 0 ]; then
+  printf '%sAll good.%s Run %sclaude%s in this folder and tell it what you want to build.\n' "$G" "$X" "$B" "$X"
+  exit 0
+fi
+printf '%s%d problem(s).%s Fix them with the commands above, or run bin/setup.\n' "$R" "$failures" "$X"
+exit 1

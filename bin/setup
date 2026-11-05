@@ -1,0 +1,112 @@
+#!/usr/bin/env bash
+# One-time setup: installs mise + every tool in mise.toml, Claude Code, and
+# the git hooks, walks you through logins, then runs bin/doctor.
+# Safe to re-run any time.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+say() { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
+interactive() { [ -t 0 ] && [ -t 1 ]; }
+
+require_unix() {
+  case "$(uname -s)" in
+    Darwin | Linux) return ;;
+  esac
+  echo "This repo needs macOS, Linux, or WSL on Windows."
+  echo "Windows: open PowerShell as admin, run 'wsl --install', reboot,"
+  echo "then open the Ubuntu app and clone this repo inside it (not under /mnt/c)."
+  exit 1
+}
+
+require_git() {
+  command -v git >/dev/null && return
+  if [ "$(uname -s)" = Darwin ]; then
+    echo "git is missing. Run: xcode-select --install   (then re-run bin/setup)"
+  else
+    echo "git is missing. Run: sudo apt-get update && sudo apt-get install -y git curl build-essential"
+  fi
+  exit 1
+}
+
+shell_rc() {
+  case "${SHELL##*/}" in
+    zsh) echo "$HOME/.zshrc" ;;
+    bash) echo "$HOME/.bashrc" ;;
+    *) echo "" ;;
+  esac
+}
+
+install_mise() {
+  export PATH="$HOME/.local/bin:$PATH"
+  if ! command -v mise >/dev/null; then
+    say "Installing mise"
+    curl -fsSL https://mise.run | sh
+  fi
+  local rc shell_name line
+  rc="$(shell_rc)"
+  shell_name="${SHELL##*/}"
+  if [ -z "$rc" ]; then
+    echo "Unknown shell '$SHELL'. Add mise activation yourself: https://mise.jdx.dev/getting-started.html"
+    return
+  fi
+  line="eval \"\$($HOME/.local/bin/mise activate $shell_name)\""
+  if ! grep -qs 'mise activate' "$rc"; then
+    say "Activating mise in $rc"
+    printf '\n# mise (tool versions)\n%s\n' "$line" >>"$rc"
+  fi
+}
+
+install_tools() {
+  say "Installing tools from mise.toml"
+  mise trust --quiet .
+  mise install
+  # Put the tools on PATH for the rest of this script.
+  eval "$(mise activate bash --shims)"
+}
+
+install_claude() {
+  command -v claude >/dev/null && return
+  say "Installing Claude Code"
+  curl -fsSL https://claude.ai/install.sh | bash
+}
+
+install_hooks() {
+  [ -d .git ] || git init -q
+  say "Installing git hooks"
+  lefthook install
+}
+
+set_git_identity() {
+  local key value
+  for key in user.name user.email; do
+    [ -n "$(git config --get "$key" || true)" ] && continue
+    read -r -p "Your git $key: " value
+    [ -n "$value" ] && git config --global "$key" "$value"
+  done
+}
+
+logins() {
+  if ! interactive; then
+    echo "(not a terminal - skipping logins; bin/doctor will list anything missing)"
+    return
+  fi
+  set_git_identity
+  if ! gh auth status >/dev/null 2>&1; then
+    say "Log in to GitHub"
+    gh auth login --web --git-protocol https
+  fi
+  if ! claude auth status 2>/dev/null | grep -q '"loggedIn": *true'; then
+    say "Log in to Claude"
+    claude auth login
+  fi
+}
+
+require_unix
+require_git
+install_mise
+install_tools
+install_claude
+install_hooks
+logins
+say "Running doctor"
+exec bin/doctor
