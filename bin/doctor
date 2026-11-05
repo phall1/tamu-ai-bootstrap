@@ -7,7 +7,8 @@ cd "$(dirname "$0")/.." || exit 1
 # The repo students clone. If `origin` still points here, they haven't
 # made their own copy yet.
 TEMPLATE_REPO="phall1/tamu-ai-bootstrap"
-TOOLS="bun python uv ruff biome gitleaks lefthook gh"
+# Tool names straight from the [tools] table in mise.toml.
+TOOLS="$(awk '/^\[/{t=($0=="[tools]")} t && /^[a-z]/{print $1}' mise.toml)"
 
 # Colors only on a real terminal (keeps output clean when Claude runs it).
 if [ -t 1 ]; then G=$'\e[32m' Y=$'\e[33m' R=$'\e[31m' B=$'\e[1m' X=$'\e[0m'; else G='' Y='' R='' B='' X=''; fi
@@ -41,11 +42,29 @@ check_os() {
   esac
 }
 
-check_git() {
-  if ! command -v git >/dev/null; then
-    bad "git not installed" "macOS: xcode-select --install   Linux/WSL: sudo apt-get install -y git"
+check_system_deps() {
+  if [ "$(uname -s)" = Darwin ]; then
+    if xcode-select -p >/dev/null 2>&1; then
+      ok "Apple Command Line Tools"
+    else
+      bad "Apple Command Line Tools missing" "xcode-select --install"
+    fi
     return
   fi
+  local missing="" cmd
+  for cmd in git curl unzip make cc; do
+    command -v "$cmd" >/dev/null || missing="$missing $cmd"
+  done
+  if [ -z "$missing" ]; then
+    ok "system packages (git, curl, unzip, build tools)"
+  else
+    bad "missing system packages:$missing" \
+      "sudo apt-get update && sudo apt-get install -y git curl unzip build-essential"
+  fi
+}
+
+check_git() {
+  command -v git >/dev/null || return
   ok "git $(git --version | awk '{print $3}')"
   local key
   for key in user.name user.email; do
@@ -81,6 +100,11 @@ check_tool() {
 check_tools() {
   local tool
   for tool in $TOOLS; do check_tool "$tool"; done
+  if [ -x node_modules/.bin/oxlint ] && [ -x node_modules/.bin/oxfmt ]; then
+    ok "TypeScript lint/format (oxlint $(node_modules/.bin/oxlint --version 2>/dev/null | awk '{print $NF}'), oxfmt)"
+  else
+    bad "TypeScript lint/format tools not installed" "bun install"
+  fi
 }
 
 check_github() {
@@ -89,6 +113,12 @@ check_github() {
     ok "GitHub: logged in as $(gh api user -q .login 2>/dev/null || echo '?')"
   else
     bad "GitHub: not logged in" "gh auth login --web --git-protocol https"
+    return
+  fi
+  if git config --get-regexp '^credential\..*github\.com.*\.helper$' 2>/dev/null | grep -q 'gh auth'; then
+    ok "git push/pull uses your GitHub login"
+  else
+    bad "git isn't using your GitHub login (push will ask for a password)" "gh auth setup-git"
   fi
 }
 
@@ -129,6 +159,7 @@ check_repo() {
 
 section "System"
 check_os
+check_system_deps
 check_git
 section "Tools"
 check_mise && check_tools

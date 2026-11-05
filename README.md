@@ -43,15 +43,17 @@ also just tell Claude "bin/doctor is failing, fix it."
 
 | File | What it does |
 | --- | --- |
-| `mise.toml` | Pins the tools: bun, Python, uv, and the linters |
+| `mise.toml` | Pins the tools: bun, Python, uv, gh, and the linters |
+| `package.json`, `oxlint.config.ts` | TypeScript lint/format for every project in the repo: oxlint, oxfmt, and the [anti-slop](https://github.com/dmmulroy/anti-slop) rules (in `tools/oxlint/`) |
 | `bin/setup` | Installs everything (safe to re-run) |
 | `bin/doctor` | Checks everything is installed and logged in |
 | `lefthook.yml` | Pre-commit checks: blocks secrets, formats Python and TS |
 | `CLAUDE.md` | Tells Claude how to work in this repo |
-| `.claude/` | The `/start` command and allowed commands |
+| `.claude/` | The `/start` command, allowed commands, and skills (TypeScript coding standards, Effect service design, anti-slop updates) |
 
-Python projects use **uv** and TypeScript projects use **bun**. Claude knows
-this already.
+Python projects use **uv** and **ruff**. TypeScript projects use **bun**,
+**[Effect v4](https://effect.website)**, **oxlint**, and **oxfmt**. Claude
+knows all of this already, so just describe what you want.
 
 ## Getting template updates
 

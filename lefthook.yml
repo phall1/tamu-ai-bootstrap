@@ -10,6 +10,11 @@ pre-commit:
       run: ruff check --fix {staged_files} && ruff format {staged_files}
       stage_fixed: true
     typescript:
-      glob: "*.{js,jsx,ts,tsx,mjs,cjs,json,jsonc,css}"
-      run: biome check --write --no-errors-on-unmatched --files-ignore-unknown=true {staged_files}
+      glob: "*.{js,jsx,ts,tsx,mjs,cjs,mts,cts,json,jsonc}"
+      exclude:
+        - ".claude/**"
+        - "tools/oxlint/anti-slop/**"
+      run: >-
+        bun x oxfmt --no-error-on-unmatched-pattern {staged_files} &&
+        bun x oxlint --fix --type-aware --no-error-on-unmatched-pattern {staged_files}
       stage_fixed: true

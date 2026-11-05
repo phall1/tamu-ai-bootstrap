@@ -18,13 +18,23 @@ require_unix() {
   exit 1
 }
 
-require_git() {
-  command -v git >/dev/null && return
+# The few things mise can't install for you: compilers/git (macOS Command Line
+# Tools) or the basic Linux packages that mise and bun need.
+require_system_deps() {
   if [ "$(uname -s)" = Darwin ]; then
-    echo "git is missing. Run: xcode-select --install   (then re-run bin/setup)"
-  else
-    echo "git is missing. Run: sudo apt-get update && sudo apt-get install -y git curl build-essential"
+    xcode-select -p >/dev/null 2>&1 && return
+    echo "Installing Apple Command Line Tools (git, compilers) - accept the popup."
+    xcode-select --install || true
+    echo "When that finishes, re-run bin/setup."
+    exit 1
   fi
+  local missing="" cmd
+  for cmd in git curl unzip make cc; do
+    command -v "$cmd" >/dev/null || missing="$missing $cmd"
+  done
+  [ -z "$missing" ] && return
+  echo "Missing:$missing. Run this, then re-run bin/setup:"
+  echo "  sudo apt-get update && sudo apt-get install -y git curl unzip build-essential"
   exit 1
 }
 
@@ -95,16 +105,24 @@ logins() {
     say "Log in to GitHub"
     gh auth login --web --git-protocol https
   fi
+  # Let plain `git push`/`git pull` use the GitHub login above.
+  gh auth status >/dev/null 2>&1 && gh auth setup-git
   if ! claude auth status 2>/dev/null | grep -q '"loggedIn": *true'; then
     say "Log in to Claude"
     claude auth login
   fi
 }
 
+install_ts_tooling() {
+  say "Installing TypeScript lint/format tools (package.json)"
+  bun install --frozen-lockfile
+}
+
 require_unix
-require_git
+require_system_deps
 install_mise
 install_tools
+install_ts_tooling
 install_claude
 install_hooks
 logins

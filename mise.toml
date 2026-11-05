@@ -1,14 +1,14 @@
 # Every tool this repo needs, managed by mise (https://mise.jdx.dev).
 # `bin/setup` installs them; `bin/doctor` checks them.
+# TypeScript lint/format tools (oxlint, oxfmt) are pinned in package.json.
 [tools]
-bun = "latest"      # TypeScript / JavaScript runtime, package manager, test runner
+bun = "latest" # TypeScript / JavaScript runtime, package manager, test runner
 python = "latest"
-uv = "latest"       # Python packages and projects
-ruff = "latest"     # Python lint + format (pre-commit)
-biome = "latest"    # TS/JS lint + format (pre-commit)
+uv = "latest" # Python packages and projects
+ruff = "latest" # Python lint + format (pre-commit)
 gitleaks = "latest" # blocks committed secrets (pre-commit)
 lefthook = "latest" # runs the git hooks in lefthook.yml
-gh = "latest"       # GitHub CLI
+gh = "latest" # GitHub CLI
 
 [env]
 # Make uv use the Python above instead of downloading its own copy.
