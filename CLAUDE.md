@@ -34,9 +34,10 @@ runtimes with brew, apt, nvm, pyenv, conda, or an official installer.
   `node_modules/effect` instead of recalling v3 APIs from memory.
 - Follow the `coding-standards` skill when writing TypeScript, and the
   `effect-service-design` skill when designing Effect services.
-- Lint and format come from the repo root and cover every project: run
-  `bun run check` from the root (oxfmt, then oxlint with type-aware rules and
-  the vendored anti-slop rules in `tools/oxlint/anti-slop`). Typecheck in the
+- Lint and format come from the repo root and cover every project. From the
+  root, run `bun run fmt` (oxfmt), then `bun run check` (format check plus
+  oxlint with type-aware rules and the vendored anti-slop rules in
+  `tools/oxlint/anti-slop`). Typecheck in the
   project with `bun x tsc --noEmit`. Fix findings properly. Don't disable
   rules, add `as` casts, or launder types through `unknown` to make them pass.
 - Keep `strict` on in each project's `tsconfig.json` (`bun init` sets it).
