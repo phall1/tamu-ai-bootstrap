@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# Creates your own GitHub repo for this folder and disconnects it from the
+# class template. Claude runs this for you during /start.
+#   bin/make-it-mine [name] [--public]   private unless you pass --public
+#   bin/make-it-mine --check             succeeds if this folder is already yours
+set -euo pipefail
+cd "$(dirname "$0")/.." || exit 1
+
+# The repo students clone.
+TEMPLATE_REPO="phall1/tamu-ai-bootstrap"
+
+main() {
+  if [ "${1:-}" = "--check" ]; then
+    check
+  else
+    make_it_mine "$@"
+  fi
+}
+
+origin() { git remote get-url origin 2>/dev/null || true; }
+is_template() { [[ "$1" == *"$TEMPLATE_REPO"* ]]; }
+
+check() {
+  local url
+  url="$(origin)"
+  if [ -z "$url" ] || is_template "$url"; then
+    echo "not on your GitHub yet"
+    exit 1
+  fi
+  echo "your repo: $url"
+}
+
+make_it_mine() {
+  local name="" visibility="--private" arg url
+  for arg in "$@"; do
+    case "$arg" in
+      --public) visibility="--public" ;;
+      -*) echo "unknown option: $arg" >&2 && exit 2 ;;
+      *) name="$arg" ;;
+    esac
+  done
+
+  url="$(origin)"
+  if [ -n "$url" ] && ! is_template "$url"; then
+    echo "Already yours: $url"
+    return
+  fi
+  if ! gh auth status >/dev/null 2>&1; then
+    echo "Log in to GitHub first: gh auth login --web --git-protocol https" >&2
+    exit 1
+  fi
+  if [ -z "$name" ]; then name="$(ask_name)"; fi
+
+  if [ -n "$url" ]; then git remote remove origin; fi
+  gh repo create "$name" "$visibility" --source . --remote origin --push
+  echo
+  echo "Done: $(gh repo view --json url -q .url)"
+}
+
+ask_name() {
+  local default="${PWD##*/}" name=""
+  if [ -t 0 ]; then read -r -p "Name for your GitHub repo [$default]: " name; fi
+  echo "${name:-$default}"
+}
+
+main "$@"

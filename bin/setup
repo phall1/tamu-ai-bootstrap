@@ -1,112 +1,148 @@
 #!/usr/bin/env bash
-# One-time setup: installs mise + every tool in mise.toml, Claude Code, and
-# the git hooks, walks you through logins, then runs bin/doctor.
-# Safe to re-run any time.
+# Sets up everything this repo needs, then opens Claude Code.
+# Safe to re-run any time: it skips whatever is already done.
 set -euo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." || exit 1
+
+main() {
+  check_os
+  check_system_packages
+  install_mise
+  install_tools
+  install_claude
+  install_git_hooks
+  if is_terminal; then
+    log_in_to_github
+    set_git_identity
+    log_in_to_claude
+  fi
+  say "Checking everything"
+  bin/doctor || exit 1
+  if is_terminal; then
+    start_claude
+  fi
+}
 
 say() { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
-interactive() { [ -t 0 ] && [ -t 1 ]; }
+is_terminal() { [ -t 0 ] && [ -t 1 ]; }
+is_mac() { [ "$(uname -s)" = Darwin ]; }
+github_logged_in() { gh auth status >/dev/null 2>&1; }
+claude_logged_in() { claude auth status 2>/dev/null | grep -q '"loggedIn": *true'; }
 
-require_unix() {
+check_os() {
   case "$(uname -s)" in
     Darwin | Linux) return ;;
   esac
   echo "This repo needs macOS, Linux, or WSL on Windows."
-  echo "Windows: open PowerShell as admin, run 'wsl --install', reboot,"
+  echo "Windows: open PowerShell as admin, run 'wsl --install', restart,"
   echo "then open the Ubuntu app and clone this repo inside it (not under /mnt/c)."
   exit 1
 }
 
-require_git() {
-  command -v git >/dev/null && return
-  if [ "$(uname -s)" = Darwin ]; then
-    echo "git is missing. Run: xcode-select --install   (then re-run bin/setup)"
-  else
-    echo "git is missing. Run: sudo apt-get update && sudo apt-get install -y git curl build-essential"
+# The few things mise can't install: git and compilers (Apple Command Line
+# Tools on macOS) or the basic Linux packages that mise and bun need.
+check_system_packages() {
+  if is_mac; then
+    if xcode-select -p >/dev/null 2>&1; then return; fi
+    echo "Installing Apple Command Line Tools - click Install in the popup."
+    xcode-select --install || true
+    echo "When that finishes, run bin/setup again."
+    exit 1
   fi
+  local cmd missing=""
+  for cmd in git curl unzip make cc; do
+    command -v "$cmd" >/dev/null || missing="$missing $cmd"
+  done
+  if [ -z "$missing" ]; then return; fi
+  echo "Missing:$missing. Run this, then run bin/setup again:"
+  echo "  sudo apt-get update && sudo apt-get install -y git curl unzip build-essential"
   exit 1
-}
-
-shell_rc() {
-  case "${SHELL##*/}" in
-    zsh) echo "$HOME/.zshrc" ;;
-    bash) echo "$HOME/.bashrc" ;;
-    *) echo "" ;;
-  esac
 }
 
 install_mise() {
   export PATH="$HOME/.local/bin:$PATH"
   if ! command -v mise >/dev/null; then
-    say "Installing mise"
+    say "Installing mise (manages tool versions)"
     curl -fsSL https://mise.run | sh
   fi
-  local rc shell_name line
-  rc="$(shell_rc)"
-  shell_name="${SHELL##*/}"
-  if [ -z "$rc" ]; then
-    echo "Unknown shell '$SHELL'. Add mise activation yourself: https://mise.jdx.dev/getting-started.html"
-    return
-  fi
-  line="eval \"\$($HOME/.local/bin/mise activate $shell_name)\""
-  if ! grep -qs 'mise activate' "$rc"; then
-    say "Activating mise in $rc"
-    printf '\n# mise (tool versions)\n%s\n' "$line" >>"$rc"
-  fi
+  activate_mise_in_shell
+}
+
+# New terminals need mise on PATH so the tools (and Claude) can find them.
+activate_mise_in_shell() {
+  local shell_name="${SHELL##*/}" rc
+  case "$shell_name" in
+    zsh) rc="$HOME/.zshrc" ;;
+    bash) rc="$HOME/.bashrc" ;;
+    *)
+      echo "Unknown shell '$SHELL'. Activate mise yourself: https://mise.jdx.dev/getting-started.html"
+      return
+      ;;
+  esac
+  if grep -qs 'mise activate' "$rc"; then return; fi
+  local line="eval \"\$($HOME/.local/bin/mise activate $shell_name)\""
+  printf '\n# mise (tool versions)\n%s\n' "$line" >>"$rc"
 }
 
 install_tools() {
-  say "Installing tools from mise.toml"
+  say "Installing tools (mise.toml, package.json)"
   mise trust --quiet .
   mise install
-  # Put the tools on PATH for the rest of this script.
-  eval "$(mise activate bash --shims)"
+  eval "$(mise activate bash --shims)" # tools on PATH for the rest of this script
+  bun install --frozen-lockfile
 }
 
 install_claude() {
-  command -v claude >/dev/null && return
+  if command -v claude >/dev/null; then return; fi
   say "Installing Claude Code"
   curl -fsSL https://claude.ai/install.sh | bash
 }
 
-install_hooks() {
-  [ -d .git ] || git init -q
-  say "Installing git hooks"
-  lefthook install
+install_git_hooks() {
+  if [ ! -d .git ]; then git init -q; fi
+  lefthook install >/dev/null
 }
 
-set_git_identity() {
-  local key value
-  for key in user.name user.email; do
-    [ -n "$(git config --get "$key" || true)" ] && continue
-    read -r -p "Your git $key: " value
-    [ -n "$value" ] && git config --global "$key" "$value"
-  done
-}
-
-logins() {
-  if ! interactive; then
-    echo "(not a terminal - skipping logins; bin/doctor will list anything missing)"
-    return
-  fi
-  set_git_identity
-  if ! gh auth status >/dev/null 2>&1; then
+log_in_to_github() {
+  if ! github_logged_in; then
     say "Log in to GitHub"
     gh auth login --web --git-protocol https
   fi
-  if ! claude auth status 2>/dev/null | grep -q '"loggedIn": *true'; then
-    say "Log in to Claude"
-    claude auth login
-  fi
+  # Plain `git push` then uses this login. Skipped if the login was cancelled.
+  if github_logged_in; then gh auth setup-git; fi
 }
 
-require_unix
-require_git
-install_mise
-install_tools
-install_claude
-install_hooks
-logins
-say "Running doctor"
-exec bin/doctor
+# Suggests the GitHub name and GitHub's private noreply email, so commits
+# don't publish a real address.
+set_git_identity() {
+  local key value suggestion
+  for key in user.name user.email; do
+    if git config --get "$key" >/dev/null; then continue; fi
+    suggestion="$(github_suggestion "$key")"
+    read -r -p "Your git $key${suggestion:+ [$suggestion]}: " value
+    value="${value:-$suggestion}"
+    if [ -n "$value" ]; then git config --global "$key" "$value"; fi
+  done
+}
+
+github_suggestion() {
+  case "$1" in
+    user.name) gh api user -q '.name // .login' 2>/dev/null || true ;;
+    user.email) gh api user -q '"\(.id)+\(.login)@users.noreply.github.com"' 2>/dev/null || true ;;
+  esac
+}
+
+log_in_to_claude() {
+  if claude_logged_in; then return; fi
+  say "Log in to Claude"
+  claude auth login
+}
+
+start_claude() {
+  say "Starting Claude Code"
+  echo "If it asks whether you trust this folder, choose Yes."
+  echo "Next time, just run: cd $PWD && claude"
+  exec claude /start
+}
+
+main "$@"

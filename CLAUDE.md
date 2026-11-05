@@ -1,52 +1,62 @@
 # CLAUDE.md
 
-This is a starter repo for students who may be new to programming. It is not a
-project yet. The student decides what to build, and you build it with them.
+This is a starter repo for students, many of them new to programming. There's
+no project yet. The student says what they want, and you build it with them.
 
-## Before anything else
+## First
 
 If `bin/doctor` hasn't passed this session, run it. If it fails, run
-`bin/setup` and fix what you can. Some steps need the student, like logins.
-For those, give them the exact command and tell them to type it with a `!`
-in front (for example `! gh auth login`), so it runs in this session.
+`bin/setup` and fix what you can. When a step needs the student (logins, for
+example), give them the exact command with a `!` in front, such as
+`! gh auth login`, so it runs in this session.
 
-## Toolchain (do not deviate)
+## Tools (don't deviate)
 
-Tool versions are pinned in `mise.toml` and installed by mise. Never install
-runtimes with brew, apt, nvm, pyenv, conda, or an official installer.
+mise installs every tool (`mise.toml`). Never install runtimes with brew, apt,
+nvm, pyenv, conda, or an installer script.
 
-- **TypeScript / JavaScript → bun.** Use `bun init`, `bun add`, `bun run`,
-  `bun test`, `bunx`. Never use npm, npx, yarn, pnpm, or node.
 - **Python → uv.** Use `uv init`, `uv add`, `uv run`, `uvx`. Never use pip,
-  `python -m venv`, poetry, or conda. Run scripts with `uv run`, not `python`.
-- When the language doesn't matter, pick whichever the student already used.
-  If they haven't used either, pick Python.
-- Put each new project in its own top-level folder (`uv init analysis`,
-  `mkdir dashboard && cd dashboard && bun init -y`). Don't put it at the repo
-  root, which holds the setup files.
+  venv, poetry, conda, or bare `python`.
+- **TypeScript → bun.** Use `bun init`, `bun add`, `bun run`, `bun test`,
+  `bun x`. Never use npm, npx, yarn, pnpm, or node.
+- If the student has no preference, use what they used last, or Python.
+- Give each project its own top-level folder (`uv init analysis`, or
+  `mkdir dashboard && cd dashboard && bun init -y`). The repo root holds the
+  setup files.
+
+## TypeScript
+
+- Use **Effect v4** (`bun add effect`) for errors, async, services, and
+  `Schema` parsing, instead of try/catch or hand-written validation. v4 APIs
+  differ from v3. When unsure, read `node_modules/effect/src` rather than
+  relying on memory.
+- Follow the `coding-standards` skill. For Effect services, use
+  `effect-service-design`.
+- From the repo root, run `bun run fix` (lint autofix + format), then
+  `bun run check`. From a project folder, run `bun run --cwd .. fix`.
+  Typecheck in the project with `bun x tsc --noEmit`.
+- Fix lint findings for real. Don't disable rules, add `as` casts, or launder
+  types through `unknown`.
 
 ## Show it working
 
-Students learn by seeing results. When you build something, run it and show it:
+Students learn by seeing results:
 
-- Scripts and analysis: run them and show the output. For charts, write an
-  HTML or PNG file and open it (`open` on macOS, `explorer.exe` on WSL).
-- Anything with a UI: start a dev server with live reload in the background
-  and give the student the localhost URL. For bun, use `bun --hot`.
-- Leave the student a single command that runs it again.
+- Run scripts and show the output. For charts, write an HTML or PNG file and
+  open it (`open` on macOS, `explorer.exe` on WSL).
+- For anything with a UI, start a dev server with live reload (`bun --hot`)
+  and give the student the localhost URL.
+- Always finish with the one command that runs it again.
 
 ## Git
 
-- Pre-commit hooks (`lefthook.yml`) scan for secrets (gitleaks) and
-  lint/format Python (ruff) and TS/JS (biome). If a commit fails, fix the
+- Pre-commit hooks block secrets and format code. If a commit fails, fix the
   cause. Never use `--no-verify`.
-- API keys and other secrets go in `.env`, which is gitignored. Never put
-  them in code.
-- `origin` may still point at the class template. Before the first push, make
-  the student their own repo: `git remote rename origin upstream && gh repo create <name> --private --source . --remote origin --push`.
+- API keys go in `.env`, which is gitignored. Never put them in code.
+- Before the first push, run `bin/make-it-mine --check`. If it fails, run
+  `bin/make-it-mine <name>` to create the student's own private GitHub repo.
 
 ## Talking to the student
 
-Keep explanations short and plain. After each change, say what you did, how to
-run it, and one thing worth understanding about it. Ask before big or
-irreversible actions.
+Be brief and plain. After each change, say what you did, how to run it, and
+one thing worth understanding. Ask before anything big or irreversible.
