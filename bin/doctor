@@ -4,9 +4,6 @@
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
 
-# The repo students clone. If `origin` still points here, they haven't
-# made their own copy yet.
-TEMPLATE_REPO="phall1/tamu-ai-bootstrap"
 # Tool names straight from the [tools] table in mise.toml.
 TOOLS="$(awk '/^\[/{t=($0=="[tools]")} t && /^[a-z]/{print $1}' mise.toml)"
 
@@ -97,11 +94,13 @@ check_tool() {
   ok "$tool ($(mise current "$tool" 2>/dev/null))"
 }
 
+pkg_version() { sed -n 's/^ *"version": *"\(.*\)".*/\1/p' "node_modules/$1/package.json" | head -1; }
+
 check_tools() {
   local tool
   for tool in $TOOLS; do check_tool "$tool"; done
   if [ -x node_modules/.bin/oxlint ] && [ -x node_modules/.bin/oxfmt ]; then
-    ok "TypeScript lint/format (oxlint $(node_modules/.bin/oxlint --version 2>/dev/null | awk '{print $NF}'), oxfmt)"
+    ok "TypeScript lint/format (oxlint $(pkg_version oxlint), oxfmt $(pkg_version oxfmt))"
   else
     bad "TypeScript lint/format tools not installed" "bun install"
   fi
@@ -145,15 +144,11 @@ check_repo() {
   else
     bad "pre-commit hooks not installed" "lefthook install"
   fi
-  local origin
-  origin="$(git remote get-url origin 2>/dev/null || true)"
-  if [ -z "$origin" ]; then
-    warn "no 'origin' remote yet" "gh repo create <name> --private --source . --remote origin --push"
-  elif [[ "$origin" == *"$TEMPLATE_REPO"* ]]; then
-    warn "'origin' is still the class template" \
-      "git remote rename origin upstream && gh repo create <name> --private --source . --remote origin --push"
+  local status
+  if status="$(bin/make-it-mine --check)"; then
+    ok "$status"
   else
-    ok "origin: $origin"
+    warn "$status" "bin/make-it-mine   (creates your own GitHub repo, once)"
   fi
 }
 

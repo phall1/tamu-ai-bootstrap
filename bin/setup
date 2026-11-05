@@ -86,12 +86,24 @@ install_hooks() {
   lefthook install
 }
 
+# Suggest values from the GitHub account; the email is GitHub's private
+# noreply address so commits don't publish a real one.
+github_default() {
+  gh auth status >/dev/null 2>&1 || return 0
+  case "$1" in
+    user.name) gh api user -q '.name // .login' 2>/dev/null ;;
+    user.email) gh api user -q '"\(.id)+\(.login)@users.noreply.github.com"' 2>/dev/null ;;
+  esac
+}
+
 set_git_identity() {
-  local key value
+  local key value default
   for key in user.name user.email; do
-    [ -n "$(git config --get "$key" || true)" ] && continue
-    read -r -p "Your git $key: " value
-    [ -n "$value" ] && git config --global "$key" "$value"
+    if [ -n "$(git config --get "$key" || true)" ]; then continue; fi
+    default="$(github_default "$key")"
+    read -r -p "Your git $key${default:+ [$default]}: " value
+    value="${value:-$default}"
+    if [ -n "$value" ]; then git config --global "$key" "$value"; fi
   done
 }
 
@@ -100,17 +112,29 @@ logins() {
     echo "(not a terminal - skipping logins; bin/doctor will list anything missing)"
     return
   fi
-  set_git_identity
   if ! gh auth status >/dev/null 2>&1; then
     say "Log in to GitHub"
     gh auth login --web --git-protocol https
   fi
   # Let plain `git push`/`git pull` use the GitHub login above.
-  gh auth status >/dev/null 2>&1 && gh auth setup-git
+  if gh auth status >/dev/null 2>&1; then gh auth setup-git; fi
+  set_git_identity
   if ! claude auth status 2>/dev/null | grep -q '"loggedIn": *true'; then
     say "Log in to Claude"
     claude auth login
   fi
+  offer_own_repo
+}
+
+offer_own_repo() {
+  bin/make-it-mine --check >/dev/null && return
+  gh auth status >/dev/null 2>&1 || return 0
+  local answer
+  read -r -p "Create your own GitHub repo for this now? [Y/n] " answer
+  case "$answer" in
+    n* | N*) echo "Later: bin/make-it-mine" ;;
+    *) bin/make-it-mine ;;
+  esac
 }
 
 install_ts_tooling() {

@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+# Run once after cloning: turns this clone into your own GitHub repo.
+#   bin/make-it-mine [name] [--public]   create github.com/<you>/<name> (private by default)
+#   bin/make-it-mine --check             exit 0 if origin is already yours
+# The class template stays reachable as the `upstream` remote, so later
+# template updates are one `git pull upstream main` away.
+set -euo pipefail
+cd "$(dirname "$0")/.." || exit 1
+
+# The repo students clone. Change this if you copy the template elsewhere.
+TEMPLATE_REPO="phall1/tamu-ai-bootstrap"
+
+origin_url() { git remote get-url origin 2>/dev/null || true; }
+is_template() { [[ "$1" == *"$TEMPLATE_REPO"* ]]; }
+
+check() {
+  local origin
+  origin="$(origin_url)"
+  if [ -z "$origin" ]; then
+    echo "no 'origin' remote yet"
+    exit 1
+  fi
+  if is_template "$origin"; then
+    echo "'origin' is still the class template"
+    exit 1
+  fi
+  echo "origin: $origin"
+}
+
+ask_name() {
+  local default="${PWD##*/}" name=""
+  if [ -t 0 ]; then
+    read -r -p "Name for your GitHub repo [$default]: " name
+  fi
+  echo "${name:-$default}"
+}
+
+make_it_mine() {
+  local name="" visibility="--private" arg origin
+  for arg in "$@"; do
+    case "$arg" in
+      --public) visibility="--public" ;;
+      -*) echo "unknown option: $arg" >&2; exit 2 ;;
+      *) name="$arg" ;;
+    esac
+  done
+
+  origin="$(origin_url)"
+  if [ -n "$origin" ] && ! is_template "$origin"; then
+    echo "Already yours: $origin"
+    return
+  fi
+  if ! gh auth status >/dev/null 2>&1; then
+    echo "Log in to GitHub first: gh auth login --web --git-protocol https" >&2
+    exit 1
+  fi
+  [ -n "$name" ] || name="$(ask_name)"
+
+  if [ -n "$origin" ]; then
+    git remote get-url upstream >/dev/null 2>&1 && git remote remove upstream
+    git remote rename origin upstream
+  fi
+  gh repo create "$name" "$visibility" --source . --remote origin --push
+  echo
+  echo "Done. Your repo: $(gh repo view --json url -q .url)"
+  if git remote get-url upstream >/dev/null 2>&1; then
+    echo "Get class template updates any time with: git pull upstream main"
+  fi
+}
+
+if [ "${1:-}" = "--check" ]; then
+  check
+else
+  make_it_mine "$@"
+fi

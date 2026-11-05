@@ -24,7 +24,8 @@ cd my-project
 claude
 ```
 
-Then type:
+Claude asks whether you trust this folder. Say **yes**: that's what lets
+it run the repo's setup commands without asking every time. Then type:
 
 ```
 /start
@@ -47,6 +48,7 @@ also just tell Claude "bin/doctor is failing, fix it."
 | `package.json`, `oxlint.config.ts` | TypeScript lint/format for every project in the repo: oxlint, oxfmt, and the [anti-slop](https://github.com/dmmulroy/anti-slop) rules (in `tools/oxlint/`) |
 | `bin/setup` | Installs everything (safe to re-run) |
 | `bin/doctor` | Checks everything is installed and logged in |
+| `bin/make-it-mine` | Makes your own GitHub repo from this clone (run once) |
 | `lefthook.yml` | Pre-commit checks: blocks secrets, formats Python and TS |
 | `CLAUDE.md` | Tells Claude how to work in this repo |
 | `.claude/` | The `/start` command, allowed commands, and skills (TypeScript coding standards, Effect service design, anti-slop updates) |
@@ -55,10 +57,19 @@ Python projects use **uv** and **ruff**. TypeScript projects use **bun**,
 **[Effect v4](https://effect.website)**, **oxlint**, and **oxfmt**. Claude
 knows all of this already, so just describe what you want.
 
-## Getting template updates
+## Your own copy on GitHub
 
-`/start` renames the class template remote to `upstream`. To pull in
-later changes to the template:
+You don't need to fork. `bin/setup` (or `/start`) offers to run
+`bin/make-it-mine`, which creates a **private** repo on your GitHub account
+and pushes this code to it. Run it yourself any time:
+
+```bash
+bin/make-it-mine my-project            # private
+bin/make-it-mine my-project --public   # if you want to share it
+```
+
+The class template stays connected as `upstream`. To pull in later changes
+to the template:
 
 ```bash
 git pull upstream main

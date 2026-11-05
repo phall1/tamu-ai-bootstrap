@@ -3,8 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "lint": "oxlint --type-aware",
-    "fmt": "oxfmt",
+    "fix": "oxlint --fix --type-aware; oxfmt",
     "check": "oxfmt --check && oxlint --type-aware"
   },
   "devDependencies": {

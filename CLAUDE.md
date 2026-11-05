@@ -34,11 +34,11 @@ runtimes with brew, apt, nvm, pyenv, conda, or an official installer.
   `node_modules/effect` instead of recalling v3 APIs from memory.
 - Follow the `coding-standards` skill when writing TypeScript, and the
   `effect-service-design` skill when designing Effect services.
-- Lint and format come from the repo root and cover every project. From the
-  root, run `bun run fmt` (oxfmt), then `bun run check` (format check plus
-  oxlint with type-aware rules and the vendored anti-slop rules in
-  `tools/oxlint/anti-slop`). Typecheck in the
-  project with `bun x tsc --noEmit`. Fix findings properly. Don't disable
+- Lint and format come from the repo root and cover every project. Run
+  `bun run fix` (auto-fix lint, then format) and then `bun run check` (oxfmt
+  plus type-aware oxlint with the vendored anti-slop rules in
+  `tools/oxlint/anti-slop`). From a project folder, use
+  `bun run --cwd .. fix`. Typecheck in the project with `bun x tsc --noEmit`. Fix findings properly. Don't disable
   rules, add `as` casts, or launder types through `unknown` to make them pass.
 - Keep `strict` on in each project's `tsconfig.json` (`bun init` sets it).
 
@@ -59,8 +59,9 @@ Students learn by seeing results. When you build something, run it and show it:
   cause. Never use `--no-verify`.
 - API keys and other secrets go in `.env`, which is gitignored. Never put
   them in code.
-- `origin` may still point at the class template. Before the first push, make
-  the student their own repo: `git remote rename origin upstream && gh repo create <name> --private --source . --remote origin --push`.
+- `origin` may still point at the class template. Before the first push, run
+  `bin/make-it-mine <name>` (once). It creates the student's own private
+  GitHub repo and keeps the template as `upstream`.
 
 ## Talking to the student
 
