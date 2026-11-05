@@ -14,7 +14,7 @@ main() {
   if is_terminal; then
     log_in_to_github
     set_git_identity
-    log_in_to_claude
+    choose_claude_access
   fi
   say "Checking everything"
   bin/doctor || exit 1
@@ -27,7 +27,6 @@ say() { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
 is_terminal() { [ -t 0 ] && [ -t 1 ]; }
 is_mac() { [ "$(uname -s)" = Darwin ]; }
 github_logged_in() { gh auth status >/dev/null 2>&1; }
-claude_logged_in() { claude auth status 2>/dev/null | grep -q '"loggedIn": *true'; }
 
 check_os() {
   case "$(uname -s)" in
@@ -132,10 +131,19 @@ github_suggestion() {
   esac
 }
 
-log_in_to_claude() {
-  if claude_logged_in; then return; fi
-  say "Log in to Claude"
-  claude auth login
+# Claude Code works with either a TAMU AI Chat API key or a personal Claude
+# subscription. bin/use switches between them later.
+choose_claude_access() {
+  if bin/use check >/dev/null 2>&1; then return; fi
+  say "How will you use Claude?"
+  echo "  1) TAMU AI Chat API key (no subscription needed)"
+  echo "  2) My own Claude subscription (Pro or Max)"
+  local choice
+  read -r -p "Choose 1 or 2 [1]: " choice
+  case "$choice" in
+    2) bin/use claude ;;
+    *) bin/use tamu ;;
+  esac
 }
 
 start_claude() {
