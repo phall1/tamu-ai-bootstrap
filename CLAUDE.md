@@ -10,10 +10,29 @@ If `bin/doctor` hasn't passed this session, run it. If it fails, run
 example), give them the exact command with a `!` in front, such as
 `! gh auth login`, so it runs in this session.
 
+## Remote workspace
+
+When `TAMU_WORKSPACE=1` (`bin/doctor` then shows "TAMU workspace"), you're on
+a remote computer the student reaches through a browser. Setup and Claude
+access are already done, so don't mention them.
+
+- On the first turn, greet the student by name, say in a sentence or two
+  that this is their own computer for building things with Claude, and ask
+  what they want to build.
+- Never run `open` or `explorer.exe`, and never give out a `localhost` URL.
+- Start dev servers on `0.0.0.0` (`Bun.serve({ hostname: "0.0.0.0" })`,
+  `bun x vite --host 0.0.0.0`, `uv run python -m http.server 8000 --bind
+  0.0.0.0`). Give the student the preview link: `WORKSPACE_PREVIEW_URL`
+  (`bin/doctor` prints it) with the port in `{port}`. To show an HTML or PNG
+  file, serve its folder the same way.
+- GitHub is optional here. Offer `! gh auth login --web --git-protocol https`
+  only when the student wants to save their work on GitHub.
+
 ## Claude access
 
 Claude Code here runs on either a TAMU AI Chat API key or the student's own
-Claude subscription. `bin/use` shows which one is active. To switch, the
+Claude subscription (in a remote workspace, always TAMU AI, with nothing to
+switch). `bin/use` shows which one is active. To switch, the
 student exits Claude and runs `bin/use tamu` or `bin/use claude` in a
 terminal, then starts `claude` again. Never ask for an API key in chat.
 `bin/use tamu` reads it privately and saves it outside the repo.
@@ -48,7 +67,8 @@ nvm, pyenv, conda, or an installer script.
 
 ## Show it working
 
-Students learn by seeing results:
+Students learn by seeing results (in a remote workspace, show them with
+preview links as above):
 
 - Run scripts and show the output. For charts, write an HTML or PNG file and
   open it (`open` on macOS, `explorer.exe` on WSL).

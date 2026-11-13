@@ -6,6 +6,8 @@
 #   bin/use tamu --model "<name>"     pick a model (shows the ones you can use)
 #   bin/use claude                    your own Claude account (Pro or Max)
 #   bin/use check                     succeed if the active choice works
+# In a TAMU workspace (TAMU_WORKSPACE=1) the workspace already connects Claude
+# to TAMU AI, so there is nothing to switch.
 # Another TAMUS school? Set TAMU_AI_URL, e.g. TAMU_AI_URL=https://chat-api.example.edu/api bin/use tamu
 set -euo pipefail
 cd "$(dirname "$0")/.." || exit 1
@@ -14,17 +16,26 @@ TAMU_AI_URL="${TAMU_AI_URL:-https://chat-api.tamu.ai/api}"
 DEFAULT_MODEL="protected.Claude Sonnet 4.6"
 KEY_FILE="$HOME/.config/tamu-ai/api-key" # outside the repo, readable only by you
 SETTINGS=".claude/settings.local.json"   # personal, gitignored
+# Set by the workspace platform. The overrides exist for testing.
+WORKSPACE_ENV_FILE="${WORKSPACE_ENV_FILE:-/etc/workspace/workspace.env}"
+WORKSPACE_TOKEN_FILE="${WORKSPACE_TOKEN_FILE:-/etc/workspace/token}"
+USER_SETTINGS="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json"
 
 main() {
+  if in_workspace; then
+    workspace "${1:-}"
+    return
+  fi
   case "${1:-}" in
     "") show ;;
     tamu) shift && use_tamu "$@" ;;
     claude) use_claude ;;
     check) check ;;
-    *) sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//' && exit 2 ;;
+    *) sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//' && exit 2 ;;
   esac
 }
 
+in_workspace() { [ "${TAMU_WORKSPACE:-}" = 1 ]; }
 using_tamu() { [ -n "$(settings_get env.ANTHROPIC_BASE_URL)" ]; }
 claude_logged_in() { claude auth status 2>/dev/null | grep -q '"loggedIn": *true'; }
 
@@ -126,11 +137,56 @@ use_claude() {
   echo "Claude Code now uses your Claude account here. If Claude is already running, restart it."
 }
 
+# --- TAMU workspace: the platform configures Claude in ~/.claude/settings.json ---
+
+workspace() {
+  case "$1" in
+    check) workspace_check ;;
+    "") echo "Using $(workspace_summary)" ;;
+    *) echo "Using TAMU AI (provided by your workspace). Nothing to switch here." ;;
+  esac
+}
+
+workspace_check() {
+  local url expected auth
+  url="$(settings_get env.ANTHROPIC_BASE_URL "$USER_SETTINGS")"
+  auth="$(settings_get apiKeyHelper "$USER_SETTINGS")"
+  auth="${auth:-${ANTHROPIC_API_KEY:-${ANTHROPIC_AUTH_TOKEN:-}}}"
+  url="${url:-${ANTHROPIC_BASE_URL:-}}"
+  expected="$(workspace_value TAMU_AI_BASE_URL)"
+  if using_tamu; then echo "$SETTINGS overrides the workspace's Claude settings (delete it)" && exit 1; fi
+  if [ -z "$url" ]; then echo "workspace Claude settings missing ANTHROPIC_BASE_URL (ask your instructor)" && exit 1; fi
+  if [ -z "$auth" ]; then echo "workspace Claude settings missing apiKeyHelper (ask your instructor)" && exit 1; fi
+  if [ -n "$expected" ] && [ "${url%/}" != "${expected%/}" ]; then
+    echo "Claude points at $url, but this workspace uses $expected (ask your instructor)" && exit 1
+  fi
+  if [ ! -r "$WORKSPACE_TOKEN_FILE" ] || [ ! -s "$WORKSPACE_TOKEN_FILE" ]; then
+    echo "workspace token missing at $WORKSPACE_TOKEN_FILE (ask your instructor)" && exit 1
+  fi
+  workspace_summary
+}
+
+workspace_summary() {
+  local model
+  model="$(workspace_value TAMU_AI_MODEL)"
+  model="${model:-$(settings_get env.ANTHROPIC_MODEL "$USER_SETTINGS")}"
+  echo "TAMU AI (provided by your workspace)${model:+, model: $model}"
+}
+
+# A variable from the environment, else from the workspace env file (KEY=value lines).
+workspace_value() {
+  if [ -n "${!1:-}" ]; then echo "${!1}" && return; fi
+  [ -r "$WORKSPACE_ENV_FILE" ] || return 0
+  sed -n "s/^\(export \)\{0,1\}$1=//p" "$WORKSPACE_ENV_FILE" | tail -1 | sed "s/^[\"']\(.*\)[\"']$/\1/"
+}
+
 # --- edits to .claude/settings.local.json; anything else in the file is kept ---
 
+# settings_get KEY [FILE]: one value from a Claude settings file (default: $SETTINGS).
 settings_get() {
-  [ -f "$SETTINGS" ] || return 0
-  bun -e 'const s = await Bun.file(process.argv[1]).json(); const v = process.argv[2].split(".").reduce((o, k) => o?.[k], s); if (v) console.log(v)' "$SETTINGS" "$1"
+  local file="${2:-$SETTINGS}"
+  [ -f "$file" ] || return 0
+  bun -e 'const s = await Bun.file(process.argv[1]).json(); const v = process.argv[2].split(".").reduce((o, k) => o?.[k], s); if (v) console.log(v)' "$file" "$1"
 }
 
 settings_tamu() {

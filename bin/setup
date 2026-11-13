@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Sets up everything this repo needs, then opens Claude Code.
 # Safe to re-run any time: it skips whatever is already done.
+# In a TAMU workspace (TAMU_WORKSPACE=1) the platform has already set up git,
+# Claude, and the tools, so this asks nothing and doesn't start Claude.
 set -euo pipefail
 cd "$(dirname "$0")/.." || exit 1
 
@@ -11,20 +13,23 @@ main() {
   install_tools
   install_claude
   install_git_hooks
-  if is_terminal; then
+  if in_workspace; then
+    connect_github_if_logged_in
+  elif is_terminal; then
     log_in_to_github
     set_git_identity
     choose_claude_access
   fi
   say "Checking everything"
   bin/doctor || exit 1
-  if is_terminal; then
+  if is_terminal && ! in_workspace; then
     start_claude
   fi
 }
 
 say() { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
 is_terminal() { [ -t 0 ] && [ -t 1 ]; }
+in_workspace() { [ "${TAMU_WORKSPACE:-}" = 1 ]; }
 is_mac() { [ "$(uname -s)" = Darwin ]; }
 github_logged_in() { gh auth status >/dev/null 2>&1; }
 
@@ -68,7 +73,9 @@ install_mise() {
 }
 
 # New terminals need mise on PATH so the tools (and Claude) can find them.
+# A workspace already has mise on PATH everywhere.
 activate_mise_in_shell() {
+  if in_workspace; then return; fi
   local shell_name="${SHELL##*/}" rc
   case "$shell_name" in
     zsh) rc="$HOME/.zshrc" ;;
@@ -107,7 +114,11 @@ log_in_to_github() {
     say "Log in to GitHub"
     gh auth login --web --git-protocol https
   fi
-  # Plain `git push` then uses this login. Skipped if the login was cancelled.
+  connect_github_if_logged_in
+}
+
+# Plain `git push` then uses the GitHub login. Skipped if there isn't one.
+connect_github_if_logged_in() {
   if github_logged_in; then gh auth setup-git; fi
 }
 

@@ -39,6 +39,10 @@ its own to see which one is active. For a different TAMU model, run
 `bin/use tamu --model "<name>"`. If you give it a name that doesn't exist, it
 lists the ones you can use.
 
+**In a TAMU workspace** (a remote computer in your browser), all of this is
+already done. Just tell Claude what you want to build. It gives you a link to
+see what it makes.
+
 **Something broken?** Run `bin/doctor`. It prints the fix for each problem.
 You can also just tell Claude what went wrong.
 

@@ -6,6 +6,7 @@ cd "$(dirname "$0")/.." || exit 1
 
 main() {
   check_os
+  check_workspace
   check_system_packages
   check_tools
   check_git
@@ -37,6 +38,7 @@ problem() {
 }
 
 is_mac() { [ "$(uname -s)" = Darwin ]; }
+in_workspace() { [ "${TAMU_WORKSPACE:-}" = 1 ]; }
 is_wsl() { grep -qis microsoft /proc/version 2>/dev/null; }
 
 check_os() {
@@ -57,6 +59,31 @@ check_linux_location() {
   else
     ok "WSL"
   fi
+}
+
+# A TAMU workspace is a remote computer set up by the platform. The values
+# printed here tell Claude who the student is and how to build preview links.
+check_workspace() {
+  in_workspace || return 0
+  local env_file="${WORKSPACE_ENV_FILE:-/etc/workspace/workspace.env}" name preview
+  if [ ! -r "$env_file" ]; then
+    problem "workspace settings missing ($env_file)" "ask your instructor"
+    return
+  fi
+  name="$(workspace_value STUDENT_NAME "$env_file")"
+  preview="$(workspace_value WORKSPACE_PREVIEW_URL "$env_file")"
+  ok "TAMU workspace (remote computer) for ${name:-student}"
+  if [ -n "$preview" ]; then
+    ok "preview links: $preview (put the port in {port})"
+  else
+    problem "workspace preview URL missing" "ask your instructor"
+  fi
+}
+
+# A variable from the environment, else from the workspace env file (KEY=value lines).
+workspace_value() {
+  if [ -n "${!1:-}" ]; then echo "${!1}" && return; fi
+  sed -n "s/^\(export \)\{0,1\}$1=//p" "$2" | tail -1 | sed "s/^[\"']\(.*\)[\"']$/\1/"
 }
 
 check_system_packages() {
@@ -114,7 +141,12 @@ check_git() {
 check_github() {
   command -v gh >/dev/null || return
   if ! gh auth status >/dev/null 2>&1; then
-    problem "not logged in to GitHub" "gh auth login --web --git-protocol https"
+    if in_workspace; then
+      note "GitHub not connected (optional, only needed to save your work on GitHub)" \
+        "gh auth login --web --git-protocol https && gh auth setup-git"
+    else
+      problem "not logged in to GitHub" "gh auth login --web --git-protocol https"
+    fi
     return
   fi
   if ! git config --get-regexp '^credential\..*github\.com.*\.helper$' 2>/dev/null | grep -q 'gh auth'; then
@@ -131,6 +163,10 @@ check_claude() {
   fi
   local status
   if ! status="$(bin/use check)"; then
+    if in_workspace; then
+      problem "$status" "ask your instructor (the workspace sets up Claude)"
+      return
+    fi
     problem "$status" "bin/use tamu   (TAMU AI Chat key)   or   bin/use claude   (Claude subscription)"
     return
   fi
