@@ -5,14 +5,11 @@ You say what you want and Claude builds it. Everything is already set up.
 
 ## Start
 
-**On Windows?** Install WSL first. Open PowerShell as administrator, run
-`wsl --install`, and restart. Then open the **Ubuntu** app and run the
-commands below in it.
+One line in a terminal (on Windows, first run `wsl --install` in PowerShell as
+administrator, restart, and use the **Ubuntu** app):
 
 ```bash
-git clone https://github.com/phall1/tamu-ai-bootstrap.git my-project
-cd my-project
-bin/setup
+curl -fsSL https://raw.githubusercontent.com/phall1/tamu-ai-bootstrap/main/install.sh | bash
 ```
 
 That's it. Setup installs the tools, has you log in to GitHub, and asks how
@@ -29,9 +26,14 @@ Claude then makes this your own GitHub repo and asks what you want to build.
 To come back later:
 
 ```bash
-cd my-project
+cd ~/ai-project
 claude
 ```
+
+**Want a computer in the cloud too?** If your class has
+[TAMU AI Workspaces](https://github.com/phall1/tamu-ai-workspaces), open your
+link and press **Connect** on T3 Code. The workspace shows up as another
+machine next to this laptop, with this same starter already set up.
 
 **Switching between TAMU and your own subscription:** exit Claude, run
 `bin/use tamu` or `bin/use claude`, and start `claude` again. Run `bin/use` on
